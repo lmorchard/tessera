@@ -1,4 +1,5 @@
 {
+  "check_seconds": 60,
   "tiles": [
     {
       "label": "Front House Lamps",

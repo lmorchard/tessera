@@ -1,9 +1,10 @@
 // main.cpp — firmware entry point.
 //
-// setup() brings the stack up in order: LVGL, the ST7701S display, GT911 touch,
-// the UI, then WiFi. Once WiFi is up it starts NTP time, OTA, and the Home
-// Assistant client. loop() pumps LVGL, ArduinoOTA, and the HA WebSocket, and
-// polls the WiFi link state for the header icon.
+// setup() brings up LVGL, the ST7701S display, GT911 touch, then starts WiFi.
+// Once WiFi is up it starts NTP and OTA, fetches the tile layout from Home
+// Assistant, builds the UI from it, and starts the HA client. The layout is
+// checked every 5 minutes, and a change restarts the panel. loop() pumps LVGL,
+// ArduinoOTA, and the HA WebSocket, and polls the WiFi link state for the icon.
 //
 // Per-device secrets and tile layout live in include/config.h (gitignored; copy
 // from config.h.example). See CLAUDE.md for the architecture overview.
@@ -29,6 +30,10 @@
 
 static lv_indev_drv_t indev_drv;
 
+// The UI is built only after the HA layout has been fetched, so the tile grid
+// always matches the layout in HA. Until then the panel shows a blank screen.
+static bool ui_built = false;
+
 // One-time bring-up of the services that need WiFi (NTP, OTA, HA). Deferred to
 // the first successful association in loop() so a slow or missing AP at boot
 // never blocks the UI — and so it self-heals once WiFi eventually connects.
@@ -36,8 +41,28 @@ static void start_services() {
   Serial.printf("WiFi connected: %s\n", WiFi.localIP().toString().c_str());
   configTzTime(TZ_INFO, NTP_SERVER);
   ota_init();
+}
+
+// Fetch the layout and, once it's loaded, build the UI and start the HA client.
+// Retried from loop() until it succeeds. HA is the only source of the layout, so
+// there's no fallback to a compiled layout here.
+static void try_load_layout() {
+  if (!layout_fetch()) return;
+  layout_commit();
+  ui_init();
   ha_init();
-  layout_fetch();
+  ui_built = true;
+}
+
+// Check HA for a changed layout. Changes are applied by a restart, which rebuilds
+// the UI from scratch. That's simpler and more reliable than rebuilding the grid
+// in place, and it takes about 20 seconds.
+static void check_layout_changed() {
+  if (!layout_fetch()) return;
+  if (!layout_changed()) return;
+  Serial.println("layout: changed in HA, restarting to apply");
+  delay(200);
+  ESP.restart();
 }
 
 void setup() {
@@ -53,7 +78,7 @@ void setup() {
   indev_drv.read_cb = touch_read;
   lv_indev_drv_register(&indev_drv);
 
-  ui_init();
+  layout_init();
 
   // Start WiFi non-blocking — don't stall setup() waiting to associate. The
   // connection state machine in loop() starts NTP/OTA/HA on the first connect
@@ -76,8 +101,22 @@ void loop() {
   // device self-heals without a power-cycle.
   static bool services_started = false;
   static uint32_t last_wifi_attempt = 0;
+  static uint32_t last_layout_try = 0;
+  static uint32_t last_layout_check = 0;
   if (WiFi.status() == WL_CONNECTED) {
     if (!services_started) { start_services(); services_started = true; }
+    // Load the layout (and build the UI) as soon as WiFi is up, retrying every
+    // 10 s until HA answers.
+    if (!ui_built && now - last_layout_try > 10000) {
+      last_layout_try = now;
+      try_load_layout();
+    }
+    // Once running, check HA for a changed layout at the interval the layout
+    // file sets (60 s by default).
+    if (ui_built && now - last_layout_check > layout_check_seconds() * 1000UL) {
+      last_layout_check = now;
+      check_layout_changed();
+    }
   } else if (now - last_wifi_attempt > 20000) {
     last_wifi_attempt = now;
     Serial.println("WiFi down — retrying association");
@@ -85,7 +124,7 @@ void loop() {
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
 
-  if (services_started) {   // only pump services once they have been initialised
+  if (ui_built) {   // only pump services once the UI and HA client are up
     ota_loop();
     ha_loop();
   }

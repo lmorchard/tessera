@@ -15,23 +15,56 @@
 #include "ui.h"
 #include "display.h"
 #include "ha_client.h"
+#include "layout.h"
 #include "config.h"
 
 #define HEADER_H   56
-#define TILE_W     142
-#define TILE_H     121
 #define TILE_GAP   11
-#define COLS       3
 #define MAX_PAGES  8
+
+// Grid chosen per page from how many cells it holds (lamps plus the thermostat,
+// when enabled). Fewer cells means bigger tiles. Each tile fits the tile area
+// (480 px wide, 480 - HEADER_H tall) with TILE_GAP between and around them.
+typedef struct { int cols, rows, w, h; } PageGrid;
+#define AREA_H (480 - HEADER_H)
+#define GRID_W(cols) ((480 - (TILE_GAP * ((cols) + 1))) / (cols))
+#define GRID_H(rows) ((AREA_H - (TILE_GAP * ((rows) + 1))) / (rows))
+static const PageGrid GRID_2x2 = { 2, 2, GRID_W(2), GRID_H(2) };
+static const PageGrid GRID_2x3 = { 2, 3, GRID_W(2), GRID_H(3) };
+static const PageGrid GRID_3x3 = { 3, 3, GRID_W(3), GRID_H(3) };
+
+static const PageGrid& grid_for_cells(int cells) {
+  if (cells <= 4) return GRID_2x2;
+  if (cells <= 6) return GRID_2x3;
+  return GRID_3x3;
+}
+
+// Cell count per page, including the thermostat cell when it's on that page.
+static int page_cells(int page) {
+  int n = 0;
+  for (int j = 0; j < layout_count(); j++)
+    if (layout_get(j)->page == page) n++;
+#if THERMOSTAT_ENABLED
+  if (page == THERMO_PAGE) n++;
+#endif
+  return n;
+}
+
+// Position of the cell at index `pos` on a page, using that page's grid.
+static void cell_origin(const PageGrid& g, int pos, int* x, int* y) {
+  int x_start = (480 - g.cols * g.w - (g.cols - 1) * TILE_GAP) / 2;
+  *x = x_start + (pos % g.cols) * (g.w + TILE_GAP);
+  *y = TILE_GAP + (pos / g.cols) * (g.h + TILE_GAP);
+}
 #define THERMO_PAGE 1   // 0-based page the Nest thermostat tile sits on
 
 static lv_obj_t *tileview;
 static lv_obj_t *tile_pages[MAX_PAGES];
-static lv_obj_t *tile_btns[MOSAIC_COUNT];
-static lv_obj_t *tile_labels[MOSAIC_COUNT];   // name
-static lv_obj_t *tile_values[MOSAIC_COUNT];   // "On"/"Off"
-static lv_obj_t *tile_pips[MOSAIC_COUNT];     // status pip top-right
-static lv_obj_t *tile_icons[MOSAIC_COUNT];    // MDI glyph top-left
+static lv_obj_t *tile_btns[LAYOUT_MAX_TILES];
+static lv_obj_t *tile_labels[LAYOUT_MAX_TILES];   // name
+static lv_obj_t *tile_values[LAYOUT_MAX_TILES];   // "On"/"Off"
+static lv_obj_t *tile_pips[LAYOUT_MAX_TILES];     // status pip top-right
+static lv_obj_t *tile_icons[LAYOUT_MAX_TILES];    // MDI glyph top-left
 
 extern const lv_font_t mdi_icons;             // generated in src/mdi_icons.c
 
@@ -52,7 +85,7 @@ static uint32_t  fan_off_at = 0;  // millis() when the timed fan run should stop
 static bool      setpoint_pending = false;  // local setpoint edits waiting to be sent
 static uint32_t  setpoint_tap_ms  = 0;      // time of last setpoint tap (for debounce)
 static uint32_t  setpoint_send_ms = 0;      // time we last sent (ignore echoes briefly after)
-static bool tile_is_on[MOSAIC_COUNT] = { false };
+static bool tile_is_on[LAYOUT_MAX_TILES] = { false };
 static lv_obj_t *status_dot;
 static lv_obj_t *wifi_icon;        // WiFi link status (LV_SYMBOL_WIFI) — distinct from the HA dot
 static lv_obj_t *time_label;
@@ -125,18 +158,19 @@ static void set_pip_available(int idx, bool available) {
 static void tile_btn_cb(lv_event_t* e) {
   if (suppress_click) { suppress_click = false; return; }  // this touch was a swipe
   int idx = (int)(intptr_t)lv_event_get_user_data(e);
-  const Tessera& t = MOSAIC[idx];
+  const LayoutTile* t = layout_get(idx);
+  if (!t) return;
   // Fan with a configured start speed, currently off -> turn on at that %.
   // Light with a configured color temp, currently off -> turn on at that Kelvin.
   // Otherwise (already on, or no override) fall back to plain toggle.
-  bool turn_on_at_pct    = (t.on_pct > 0    && !tile_is_on[idx] && strncmp(t.entity_id, "fan.", 4) == 0);
-  bool turn_on_at_kelvin = (t.on_kelvin > 0 && !tile_is_on[idx] && strncmp(t.entity_id, "light.", 6) == 0);
+  bool turn_on_at_pct    = (t->on_pct > 0    && !tile_is_on[idx] && strncmp(t->entity, "fan.", 4) == 0);
+  bool turn_on_at_kelvin = (t->on_kelvin > 0 && !tile_is_on[idx] && strncmp(t->entity, "light.", 6) == 0);
   if (turn_on_at_pct) {
-    ha_fan_turn_on_pct(t.entity_id, t.on_pct);
+    ha_fan_turn_on_pct(t->entity, t->on_pct);
   } else if (turn_on_at_kelvin) {
-    ha_light_turn_on_kelvin(t.entity_id, t.on_kelvin);
+    ha_light_turn_on_kelvin(t->entity, t->on_kelvin);
   } else {
-    ha_toggle(t.entity_id);
+    ha_toggle(t->entity);
   }
   // Optimistic update: restyle immediately to the predicted new state so the
   // tile feels instant. The real state_changed event will confirm or correct it.
@@ -532,9 +566,9 @@ void ui_init() {
   lv_obj_align_to(wifi_icon, status_dot, LV_ALIGN_OUT_LEFT_MID, -10, 0);
 
   // ---- Count pages ----
-  for (int i = 0; i < MOSAIC_COUNT; i++) {
-    if ((int)MOSAIC[i].page + 1 > page_count)
-      page_count = (int)MOSAIC[i].page + 1;
+  for (int i = 0; i < layout_count(); i++) {
+    if ((int)layout_get(i)->page + 1 > page_count)
+      page_count = (int)layout_get(i)->page + 1;
   }
   if (page_count > MAX_PAGES) page_count = MAX_PAGES;
 
@@ -560,23 +594,21 @@ void ui_init() {
   }
 
   // ---- Tile cards ----
-  int x_start = (480 - COLS * TILE_W - (COLS - 1) * TILE_GAP) / 2;
-
-  for (int i = 0; i < MOSAIC_COUNT; i++) {
-    uint8_t pg = MOSAIC[i].page;
+  for (int i = 0; i < layout_count(); i++) {
+    const LayoutTile* lt = layout_get(i);
+    uint8_t pg = lt->page;
     if (pg >= MAX_PAGES) continue;
+    const PageGrid& g = grid_for_cells(page_cells(pg));
     int pos = 0;
     for (int j = 0; j < i; j++) {
-      if (MOSAIC[j].page == pg) pos++;
+      if (layout_get(j)->page == pg) pos++;
     }
-    int col = pos % COLS;
-    int row = pos / COLS;
-    int x = x_start + col * (TILE_W + TILE_GAP);
-    int y = TILE_GAP + row * (TILE_H + TILE_GAP);
+    int x, y;
+    cell_origin(g, pos, &x, &y);
 
     tile_btns[i] = lv_btn_create(tile_pages[pg]);
     lv_obj_set_pos(tile_btns[i], x, y);
-    lv_obj_set_size(tile_btns[i], TILE_W, TILE_H);
+    lv_obj_set_size(tile_btns[i], g.w, g.h);
     lv_obj_set_style_radius(tile_btns[i], 22, LV_PART_MAIN);
     lv_obj_set_style_pad_all(tile_btns[i], 13, LV_PART_MAIN);
     // brief pressed feedback
@@ -586,7 +618,7 @@ void ui_init() {
 
     // icon (top-left)
     tile_icons[i] = lv_label_create(tile_btns[i]);
-    lv_label_set_text(tile_icons[i], MOSAIC[i].icon);
+    lv_label_set_text(tile_icons[i], lt->icon);
     lv_obj_set_style_text_font(tile_icons[i], &mdi_icons, LV_PART_MAIN);
     lv_obj_align(tile_icons[i], LV_ALIGN_TOP_LEFT, 0, 0);
 
@@ -600,10 +632,10 @@ void ui_init() {
 
     // name (bottom-left)
     tile_labels[i] = lv_label_create(tile_btns[i]);
-    lv_label_set_text(tile_labels[i], MOSAIC[i].label);
+    lv_label_set_text(tile_labels[i], lt->label);
     lv_obj_set_style_text_font(tile_labels[i], &lv_font_montserrat_14, LV_PART_MAIN);
     lv_label_set_long_mode(tile_labels[i], LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(tile_labels[i], TILE_W - 26);
+    lv_obj_set_width(tile_labels[i], g.w - 26);
     lv_obj_align(tile_labels[i], LV_ALIGN_BOTTOM_LEFT, 0, -18);
 
     // value (below name)
@@ -619,15 +651,15 @@ void ui_init() {
   // ---- Thermostat tile (first free cell on THERMO_PAGE) — tap opens the detail view ----
 #if THERMOSTAT_ENABLED
   {
-    int pos = 0;
-    for (int j = 0; j < MOSAIC_COUNT; j++)
-      if (MOSAIC[j].page == THERMO_PAGE) pos++;
-    int col = pos % COLS, row = pos / COLS;
-    int tx = x_start + col * (TILE_W + TILE_GAP);
-    int ty = TILE_GAP + row * (TILE_H + TILE_GAP);
+    // The thermostat takes the cell after the page's last lamp, so it's always
+    // the last cell on its page.
+    const PageGrid& g = grid_for_cells(page_cells(THERMO_PAGE));
+    int pos = page_cells(THERMO_PAGE) - 1;
+    int tx, ty;
+    cell_origin(g, pos, &tx, &ty);
     thermo_tile = lv_btn_create(tile_pages[THERMO_PAGE]);
     lv_obj_set_pos(thermo_tile, tx, ty);
-    lv_obj_set_size(thermo_tile, TILE_W, TILE_H);
+    lv_obj_set_size(thermo_tile, g.w, g.h);
     lv_obj_set_style_radius(thermo_tile, 22, LV_PART_MAIN);
     lv_obj_set_style_pad_all(thermo_tile, 13, LV_PART_MAIN);
     frosted_fill(thermo_tile);                                        // frosted neutral card
@@ -690,7 +722,7 @@ void ui_init() {
 }
 
 void ui_update_tile_state(int idx, const char* state) {
-  if (idx < 0 || idx >= MOSAIC_COUNT || !tile_btns[idx]) return;
+  if (idx < 0 || idx >= layout_count() || !tile_btns[idx]) return;
   bool on = (strcmp(state, "on") == 0);
   bool available = (strcmp(state, "unavailable") != 0 && strcmp(state, "unknown") != 0);
   tile_is_on[idx] = on;
@@ -700,7 +732,7 @@ void ui_update_tile_state(int idx, const char* state) {
 }
 
 void ui_update_tile_value(int idx, const char* value) {
-  if (idx < 0 || idx >= MOSAIC_COUNT || !tile_values[idx]) return;
+  if (idx < 0 || idx >= layout_count() || !tile_values[idx]) return;
   lv_label_set_text(tile_values[idx], value);
 }
 

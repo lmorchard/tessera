@@ -19,6 +19,7 @@
 #include <math.h>
 #include "ha_client.h"
 #include "ui.h"
+#include "layout.h"
 #include "config.h"
 #include "secrets.h"   // HA_HOST/PORT/TOKEN (gitignored; see setup wizard)
 
@@ -165,47 +166,49 @@ static void fetch_fan_state() {
 #endif
 }
 
-// Fetch one MOSAIC tile's state over REST and push it to the UI. Shared by the
+// Fetch one layout tile's state over REST and push it to the UI. Shared by the
 // staged initial fetch and the optimistic-update resync.
 static void fetch_one_tile(int i) {
+  const LayoutTile* t = layout_get(i);
+  if (!t) return;
   StaticJsonDocument<FILTER_TILE> filter;
   filter["state"] = true;
   filter["attributes"]["brightness"] = true;
   filter["attributes"]["percentage"] = true;
   DynamicJsonDocument doc(DOC_TILE);
-  if (ha_get_state(MOSAIC[i].entity_id, doc, filter)) {
+  if (ha_get_state(t->entity, doc, filter)) {
     const char* state = doc["state"];
     if (state) {
       ui_update_tile_state(i, state);
-      set_tile_value(i, MOSAIC[i].entity_id, state, doc["attributes"]);
+      set_tile_value(i, t->entity, state, doc["attributes"]);
     }
   }
 }
 
 static int tile_index_for(const char* eid) {
-  for (int i = 0; i < MOSAIC_COUNT; i++)
-    if (strcmp(MOSAIC[i].entity_id, eid) == 0) return i;
+  for (int i = 0; i < layout_count(); i++)
+    if (strcmp(layout_get(i)->entity, eid) == 0) return i;
   return -1;
 }
 
-// Staged initial fetch (TODO #6): instead of one blocking burst of ~MOSAIC_COUNT+3
-// REST GETs that freezes LVGL/touch for seconds, advance ONE entity per ha_loop()
-// pass so the UI ticks fully between each GET. Steps 0..MOSAIC_COUNT-1 = tiles,
-// then thermostat, fan, outdoor temp. -1 = idle. The 120 s safety-net refetch
-// reuses the tail steps (from FETCH_THERMO).
+// Staged initial fetch (TODO #6): instead of one blocking burst of REST GETs that
+// freezes LVGL/touch, advance ONE entity per ha_loop() pass so the UI ticks fully
+// between each GET. Steps 0..count-1 = tiles, then thermostat, fan, outdoor temp.
+// -1 = idle. The 120 s safety-net refetch reuses the tail steps (from the thermostat).
+// The tail step numbers depend on the layout size, so they're computed, not constant.
 static int fetch_step = -1;
-#define FETCH_THERMO  (MOSAIC_COUNT)
-#define FETCH_FAN     (MOSAIC_COUNT + 1)
-#define FETCH_OUTDOOR (MOSAIC_COUNT + 2)
-#define FETCH_DONE    (MOSAIC_COUNT + 3)
+static int fetch_thermo_step()  { return layout_count(); }
+static int fetch_fan_step()     { return layout_count() + 1; }
+static int fetch_outdoor_step() { return layout_count() + 2; }
+static int fetch_done_step()    { return layout_count() + 3; }
 
 static void fetch_step_advance() {
   if (fetch_step < 0) return;
-  if      (fetch_step < MOSAIC_COUNT)   fetch_one_tile(fetch_step);
-  else if (fetch_step == FETCH_THERMO)  fetch_thermostat();
-  else if (fetch_step == FETCH_FAN)     fetch_fan_state();
-  else if (fetch_step == FETCH_OUTDOOR) fetch_one_temp(ENTITY_OUTDOOR_TEMP, "temperature", ui_set_outdoor_temp);
-  if (++fetch_step >= FETCH_DONE) {
+  if      (fetch_step < layout_count())             fetch_one_tile(fetch_step);
+  else if (fetch_step == fetch_thermo_step())       fetch_thermostat();
+  else if (fetch_step == fetch_fan_step())          fetch_fan_state();
+  else if (fetch_step == fetch_outdoor_step())      fetch_one_temp(ENTITY_OUTDOOR_TEMP, "temperature", ui_set_outdoor_temp);
+  if (++fetch_step >= fetch_done_step()) {
     fetch_step = -1;
     Serial.println("Initial states fetched");
   }
@@ -330,8 +333,8 @@ static void on_message(uint8_t* payload, size_t length) {
         return;
       }
 
-      for (int i = 0; i < MOSAIC_COUNT; i++) {
-        if (strcmp(MOSAIC[i].entity_id, eid) == 0) {
+      for (int i = 0; i < layout_count(); i++) {
+        if (strcmp(layout_get(i)->entity, eid) == 0) {
           confirm_command(eid);   // real state arrived — clear any pending tile command
           ui_update_tile_state(i, est);
           set_tile_value(i, eid, est, doc["event"]["data"]["new_state"]["attributes"]);
@@ -398,7 +401,7 @@ void ha_loop() {
   static uint32_t last_temp_refresh = 0;
   if (authenticated && fetch_step < 0 && millis() - last_temp_refresh > 120000) {
     last_temp_refresh = millis();
-    fetch_step = FETCH_THERMO;
+    fetch_step = fetch_thermo_step();
   }
 }
 
