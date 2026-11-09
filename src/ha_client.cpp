@@ -363,6 +363,11 @@ static void ws_event(WStype_t type, uint8_t* payload, size_t length) {
 }
 
 void ha_init() {
+  IPAddress ip;
+  if (WiFi.hostByName(HA_HOST, ip))
+    Serial.printf("HA host %s -> %s\n", HA_HOST, ip.toString().c_str());
+  else
+    Serial.printf("HA host %s: DNS lookup failed\n", HA_HOST);
   ws.begin(HA_HOST, HA_PORT, "/api/websocket");
   ws.setExtraHeaders("Origin: http://" HA_HOST);
   ws.onEvent(ws_event);

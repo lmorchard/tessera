@@ -54,7 +54,7 @@ SERIAL_KEYWORDS = ("ch340", "ch341", "cp210", "cp2102", "ftdi", "usb serial",
 FIELDS = [
     ("WIFI_SSID",     "WiFi network name (SSID)",        "",                          False),
     ("WIFI_PASSWORD", "WiFi password",                   "",                          True),
-    ("HA_HOST",       "Home Assistant host IP",          "",                          False),
+    ("HA_HOST",       "Home Assistant host (IP or name)", "",                         False),
     ("HA_PORT",       "Home Assistant port",             "8123",                      False),
     ("HA_TOKEN",      "HA long-lived access token",      "",                          True),
     ("TZ_INFO",       "Timezone",                        "PST8PDT,M3.2.0,M11.1.0",    False),
