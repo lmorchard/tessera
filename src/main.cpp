@@ -15,6 +15,7 @@
 #include "touch.h"
 #include "ui.h"
 #include "ha_client.h"
+#include "layout.h"
 #include "ota.h"
 #include "config.h"
 #include "secrets.h"   // WiFi creds, TZ/NTP (gitignored; see setup wizard)
@@ -36,6 +37,7 @@ static void start_services() {
   configTzTime(TZ_INFO, NTP_SERVER);
   ota_init();
   ha_init();
+  layout_fetch();
 }
 
 void setup() {

@@ -1,0 +1,73 @@
+{
+  "tiles": [
+    {
+      "label": "Front House Lamps",
+      "entity": "light.front_house_lamps",
+      "page": 0,
+      "icon": "coach_lamp"
+    },
+    {
+      "label": "Boy Office Lamp",
+      "entity": "light.aiyato_rgbcw",
+      "page": 0,
+      "icon": "lightbulb",
+      "kelvin": 3000
+    },
+    {
+      "label": "Office Bar 1",
+      "entity": "light.aiyato_rgbcw_2",
+      "page": 0,
+      "icon": "lightbulb",
+      "kelvin": 3000
+    },
+    {
+      "label": "Office Bar 2",
+      "entity": "light.aiyato_rgbcw_bar2",
+      "page": 0,
+      "icon": "lightbulb",
+      "kelvin": 3000
+    },
+    {
+      "label": "Bar RGB",
+      "entity": "light.bar_rgb_lights",
+      "page": 0,
+      "icon": "lightbulb"
+    },
+    {
+      "label": "Counter Left",
+      "entity": "light.counter_lights_left",
+      "page": 0,
+      "icon": "ceiling_light"
+    },
+    {
+      "label": "Counter Right",
+      "entity": "light.counter_lights_right",
+      "page": 0,
+      "icon": "ceiling_light"
+    },
+    {
+      "label": "Dining Room Lamp",
+      "entity": "light.dining_room_dining_room_lamp",
+      "page": 0,
+      "icon": "coach_lamp"
+    },
+    {
+      "label": "Foyer Lamp 2",
+      "entity": "light.foyer_foyer_lamp_2_relay",
+      "page": 0,
+      "icon": "coach_lamp"
+    },
+    {
+      "label": "Arcade RGB Strip",
+      "entity": "light.arcade_rgb_strip",
+      "page": 1,
+      "icon": "lightbulb"
+    },
+    {
+      "label": "Arcade Blacklights",
+      "entity": "light.arcade_blacklights_smart_plug_s31_01",
+      "page": 1,
+      "icon": "lightbulb"
+    }
+  ]
+}
