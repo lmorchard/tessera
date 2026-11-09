@@ -23,6 +23,7 @@
 #define TILE_GAP   11
 #define COLS       3
 #define MAX_PAGES  8
+#define THERMO_PAGE 1   // 0-based page the Nest thermostat tile sits on
 
 static lv_obj_t *tileview;
 static lv_obj_t *tile_pages[MAX_PAGES];
@@ -65,46 +66,51 @@ static volatile bool suppress_click = false;  // set when a touch turns out to b
 static uint32_t last_activity_ms = 0;
 static bool is_dimmed = false;
 
-// Background gradient stops (kept static — LVGL stores the pointer, not a copy).
-static lv_grad_dsc_t bg_grad;
+// LCARS palette (step 1: flat colors; no gradients, frosting, or shadows).
+#define LCARS_BG      0x000000
+#define LCARS_ORANGE  0xFF9966
+#define LCARS_TAN     0xFFCC99
+#define LCARS_LAVENDER 0xCC99CC
+#define LCARS_BLUE    0x9999FF
+#define LCARS_OFF     0x2A2A2A   // off-tile fill
+#define LCARS_TEXT_DIM 0x9A9A9A
+#define LCARS_INK     0x000000   // text on lit (colored) tiles
 
-// The shared "frosted translucent card" fill — white at low opacity, hairline
-// white border, no shadow. Used by the OFF tiles, the thermostat tile, and the
-// detail-view buttons (style_frosted_btn). Leaves radius/padding to the caller.
+// Lit-tile colors, cycled by tile index so neighbours differ.
+static const uint32_t LCARS_TILE_COLORS[] = {
+  LCARS_ORANGE, LCARS_LAVENDER, LCARS_BLUE, LCARS_TAN,
+};
+static const int LCARS_TILE_COLOR_COUNT = sizeof(LCARS_TILE_COLORS) / sizeof(LCARS_TILE_COLORS[0]);
+
+// Flat card fill for OFF tiles and the thermostat card. Leaves radius/padding to the caller.
 static void frosted_fill(lv_obj_t* o) {
-  lv_obj_set_style_bg_color(o, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-  lv_obj_set_style_bg_opa(o, 38, LV_PART_MAIN);             // ~0.15
-  lv_obj_set_style_border_color(o, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-  lv_obj_set_style_border_opa(o, 72, LV_PART_MAIN);         // ~0.28
-  lv_obj_set_style_border_width(o, 1, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(o, lv_color_hex(LCARS_OFF), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(o, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_border_width(o, 0, LV_PART_MAIN);
   lv_obj_set_style_shadow_width(o, 0, LV_PART_MAIN);
 }
 
-// Apply the uniform two-state tile styling (matches the design spec).
+// Two-state tile styling in LCARS colors: ON = orange card with black text,
+// OFF = dark gray card with muted text.
 static void apply_tile_style(int idx, bool on) {
   lv_obj_t* b = tile_btns[idx];
   if (on) {
-    // Solid white card, dark text, filled green pip, subtle shadow.
-    lv_obj_set_style_bg_color(b, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(b, lv_color_hex(LCARS_TILE_COLORS[idx % LCARS_TILE_COLOR_COUNT]), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(b, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_border_width(b, 0, LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(b, 10, LV_PART_MAIN);
-    lv_obj_set_style_shadow_opa(b, LV_OPA_30, LV_PART_MAIN);
-    lv_obj_set_style_shadow_ofs_y(b, 3, LV_PART_MAIN);
-    lv_obj_set_style_shadow_color(b, lv_color_hex(0x000000), LV_PART_MAIN);
-    lv_obj_set_style_text_color(tile_labels[idx], lv_color_hex(0x1F2330), LV_PART_MAIN);
-    lv_obj_set_style_text_color(tile_values[idx], lv_color_hex(0x8A8F99), LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(b, 0, LV_PART_MAIN);
+    lv_obj_set_style_text_color(tile_labels[idx], lv_color_hex(LCARS_INK), LV_PART_MAIN);
+    lv_obj_set_style_text_color(tile_values[idx], lv_color_hex(LCARS_INK), LV_PART_MAIN);
     lv_obj_set_style_text_opa(tile_values[idx], LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_text_color(tile_icons[idx], lv_color_hex(0x1F2330), LV_PART_MAIN);
+    lv_obj_set_style_text_color(tile_icons[idx], lv_color_hex(LCARS_INK), LV_PART_MAIN);
     lv_obj_set_style_text_opa(tile_icons[idx], LV_OPA_COVER, LV_PART_MAIN);
   } else {
-    // Frosted translucent card over the gradient, white text, hollow pip.
     frosted_fill(b);
-    lv_obj_set_style_text_color(tile_labels[idx], lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_text_color(tile_values[idx], lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_text_opa(tile_values[idx], 184, LV_PART_MAIN);  // ~0.72
-    lv_obj_set_style_text_color(tile_icons[idx], lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_text_opa(tile_icons[idx], 230, LV_PART_MAIN);   // ~0.90
+    lv_obj_set_style_text_color(tile_labels[idx], lv_color_hex(LCARS_TAN), LV_PART_MAIN);
+    lv_obj_set_style_text_color(tile_values[idx], lv_color_hex(LCARS_TEXT_DIM), LV_PART_MAIN);
+    lv_obj_set_style_text_opa(tile_values[idx], LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_text_color(tile_icons[idx], lv_color_hex(LCARS_TAN), LV_PART_MAIN);
+    lv_obj_set_style_text_opa(tile_icons[idx], LV_OPA_COVER, LV_PART_MAIN);
   }
 }
 
@@ -155,8 +161,8 @@ static void update_page_dots() {
     lv_obj_set_size(page_dots[i], w, h);
     lv_obj_set_pos(page_dots[i], x, y);
     lv_obj_set_style_radius(page_dots[i], 3, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(page_dots[i], lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(page_dots[i], act ? LV_OPA_COVER : 102, LV_PART_MAIN);  // ~0.40
+    lv_obj_set_style_bg_color(page_dots[i], lv_color_hex(LCARS_ORANGE), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(page_dots[i], act ? LV_OPA_COVER : 102, LV_PART_MAIN);
     x += w + gap;
   }
 }
@@ -347,8 +353,7 @@ static void build_thermo_view(lv_obj_t* scr) {
   thermo_view = lv_obj_create(scr);
   lv_obj_set_size(thermo_view, 480, 480);
   lv_obj_set_pos(thermo_view, 0, 0);
-  lv_obj_set_style_bg_color(thermo_view, lv_color_hex(0x4F7CFF), LV_PART_MAIN);
-  lv_obj_set_style_bg_grad(thermo_view, &bg_grad, LV_PART_MAIN);   // match front page
+  lv_obj_set_style_bg_color(thermo_view, lv_color_hex(LCARS_BG), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(thermo_view, LV_OPA_COVER, LV_PART_MAIN);
   lv_obj_set_style_radius(thermo_view, 0, LV_PART_MAIN);
   lv_obj_set_style_border_width(thermo_view, 0, LV_PART_MAIN);
@@ -455,17 +460,10 @@ void ui_notify_touch() {
 void ui_init() {
   last_activity_ms = millis();
 
-  // ---- Background: vertical blue -> violet -> pink gradient ----
-  bg_grad.dir = LV_GRAD_DIR_VER;
-  bg_grad.stops_count = 3;
-  bg_grad.stops[0].color = lv_color_hex(0x4F7CFF); bg_grad.stops[0].frac = 0;
-  bg_grad.stops[1].color = lv_color_hex(0x8B5CF6); bg_grad.stops[1].frac = 128;
-  bg_grad.stops[2].color = lv_color_hex(0xE15AD6); bg_grad.stops[2].frac = 255;
-
+  // ---- Background: solid LCARS black ----
   lv_obj_t* scr = lv_scr_act();
   lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
-  lv_obj_set_style_bg_color(scr, lv_color_hex(0x4F7CFF), LV_PART_MAIN);
-  lv_obj_set_style_bg_grad(scr, &bg_grad, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(scr, lv_color_hex(LCARS_BG), LV_PART_MAIN);
 
   // ---- Header (transparent, over the gradient) ----
   lv_obj_t* header = lv_obj_create(scr);
@@ -479,7 +477,7 @@ void ui_init() {
 
   time_label = lv_label_create(header);
   lv_label_set_text(time_label, "--:-- --");
-  lv_obj_set_style_text_color(time_label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+  lv_obj_set_style_text_color(time_label, lv_color_hex(LCARS_TAN), LV_PART_MAIN);
   lv_obj_set_style_text_font(time_label, &lv_font_montserrat_24, LV_PART_MAIN);
   lv_obj_align(time_label, LV_ALIGN_LEFT_MID, 22, 0);
 
@@ -496,32 +494,31 @@ void ui_init() {
   lv_obj_t* in_icon = lv_label_create(temps);
   lv_label_set_text(in_icon, ICON_HOME_TEMP);
   lv_obj_set_style_text_font(in_icon, &mdi_icons, LV_PART_MAIN);
-  lv_obj_set_style_text_color(in_icon, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+  lv_obj_set_style_text_color(in_icon, lv_color_hex(LCARS_TAN), LV_PART_MAIN);
 
   indoor_temp_label = lv_label_create(temps);
   lv_label_set_text(indoor_temp_label, "--°");
   lv_obj_set_style_text_font(indoor_temp_label, &lv_font_montserrat_24, LV_PART_MAIN);
-  lv_obj_set_style_text_color(indoor_temp_label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+  lv_obj_set_style_text_color(indoor_temp_label, lv_color_hex(LCARS_TAN), LV_PART_MAIN);
 
   lv_obj_t* out_icon = lv_label_create(temps);
   lv_label_set_text(out_icon, ICON_WEATHER);
   lv_obj_set_style_text_font(out_icon, &mdi_icons, LV_PART_MAIN);
-  lv_obj_set_style_text_color(out_icon, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+  lv_obj_set_style_text_color(out_icon, lv_color_hex(LCARS_TAN), LV_PART_MAIN);
   lv_obj_set_style_pad_left(out_icon, 12, LV_PART_MAIN);  // gap between the pairs
 
   outdoor_temp_label = lv_label_create(temps);
   lv_label_set_text(outdoor_temp_label, "--°");
   lv_obj_set_style_text_font(outdoor_temp_label, &lv_font_montserrat_24, LV_PART_MAIN);
-  lv_obj_set_style_text_color(outdoor_temp_label, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+  lv_obj_set_style_text_color(outdoor_temp_label, lv_color_hex(LCARS_TAN), LV_PART_MAIN);
 
   status_dot = lv_obj_create(header);
   lv_obj_set_size(status_dot, 15, 15);   // match the tile status pips
-  lv_obj_set_style_bg_color(status_dot, lv_color_hex(0xA6FFCB), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(status_dot, lv_color_hex(LCARS_BLUE), LV_PART_MAIN);
   lv_obj_set_style_bg_opa(status_dot, LV_OPA_COVER, LV_PART_MAIN);
   lv_obj_set_style_border_width(status_dot, 0, LV_PART_MAIN);
   lv_obj_set_style_radius(status_dot, 8, LV_PART_MAIN);
-  lv_obj_set_style_shadow_width(status_dot, 8, LV_PART_MAIN);
-  lv_obj_set_style_shadow_color(status_dot, lv_color_hex(0xA6FFCB), LV_PART_MAIN);
+  lv_obj_set_style_shadow_width(status_dot, 0, LV_PART_MAIN);
   lv_obj_set_style_shadow_opa(status_dot, LV_OPA_70, LV_PART_MAIN);
   lv_obj_align(status_dot, LV_ALIGN_RIGHT_MID, -16, 0);
 
@@ -619,12 +616,16 @@ void ui_init() {
     set_pip_available(i, true);     // assume available until first state arrives
   }
 
-  // ---- Thermostat tile (9th cell on page 0) — tap opens the detail view ----
+  // ---- Thermostat tile (first free cell on THERMO_PAGE) — tap opens the detail view ----
+#if THERMOSTAT_ENABLED
   {
-    int col = 8 % COLS, row = 8 / COLS;   // -> col 2, row 2
+    int pos = 0;
+    for (int j = 0; j < MOSAIC_COUNT; j++)
+      if (MOSAIC[j].page == THERMO_PAGE) pos++;
+    int col = pos % COLS, row = pos / COLS;
     int tx = x_start + col * (TILE_W + TILE_GAP);
     int ty = TILE_GAP + row * (TILE_H + TILE_GAP);
-    thermo_tile = lv_btn_create(tile_pages[0]);
+    thermo_tile = lv_btn_create(tile_pages[THERMO_PAGE]);
     lv_obj_set_pos(thermo_tile, tx, ty);
     lv_obj_set_size(thermo_tile, TILE_W, TILE_H);
     lv_obj_set_style_radius(thermo_tile, 22, LV_PART_MAIN);
@@ -663,6 +664,7 @@ void ui_init() {
     lv_obj_set_style_text_font(thermo_tile_val, &lv_font_montserrat_12, LV_PART_MAIN);
     lv_obj_align(thermo_tile_val, LV_ALIGN_BOTTOM_LEFT, 0, 0);
   }
+#endif
 
   // ---- Page indicator dots ----
   if (page_count > 1) {
@@ -676,7 +678,9 @@ void ui_init() {
   }
 
   // ---- Thermostat detail view (hidden overlay) ----
+#if THERMOSTAT_ENABLED
   build_thermo_view(scr);
+#endif
 
   // ---- Timers ----
   lv_timer_create(setpoint_flush_cb, 150, NULL);

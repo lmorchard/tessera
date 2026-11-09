@@ -139,6 +139,7 @@ static void push_thermostat(const char* state, JsonVariantConst attrs) {
 }
 
 static void fetch_thermostat() {
+#if THERMOSTAT_ENABLED
   StaticJsonDocument<FILTER_THERMO> filter;
   filter["state"] = true;
   filter["attributes"]["current_temperature"] = true;
@@ -149,9 +150,11 @@ static void fetch_thermostat() {
   DynamicJsonDocument doc(DOC_THERMO);
   if (ha_get_state(ENTITY_INDOOR_TEMP, doc, filter))
     push_thermostat(doc["state"], doc["attributes"]);
+#endif
 }
 
 static void fetch_fan_state() {
+#if THERMOSTAT_ENABLED
   StaticJsonDocument<FILTER_STATE> filter;
   filter["state"] = true;
   DynamicJsonDocument doc(DOC_FAN);
@@ -159,6 +162,7 @@ static void fetch_fan_state() {
     const char* st = doc["state"];
     if (st) ui_set_fan_state(strcmp(st, "on") == 0);
   }
+#endif
 }
 
 // Fetch one MOSAIC tile's state over REST and push it to the UI. Shared by the
@@ -310,6 +314,7 @@ static void on_message(uint8_t* payload, size_t length) {
 
       // Header temperatures (not MOSAIC tiles)
       JsonVariantConst attrs = doc["event"]["data"]["new_state"]["attributes"];
+#if THERMOSTAT_ENABLED
       if (strcmp(eid, ENTITY_INDOOR_TEMP) == 0) {
         push_thermostat(est, attrs);   // updates header indoor temp + thermostat tile/detail
         return;
@@ -318,6 +323,7 @@ static void on_message(uint8_t* payload, size_t length) {
         ui_set_fan_state(strcmp(est, "on") == 0);
         return;
       }
+#endif
       if (strcmp(eid, ENTITY_OUTDOOR_TEMP) == 0) {
         if (attrs["temperature"].is<float>())
           ui_set_outdoor_temp((int)lroundf(attrs["temperature"].as<float>()));
@@ -422,35 +428,43 @@ void ha_light_turn_on_kelvin(const char* entity_id, uint16_t kelvin) {
 }
 
 void ha_thermo_fan(bool on) {
+#if THERMOSTAT_ENABLED
   if (!authenticated) return;
   StaticJsonDocument<DOC_OUT> doc;
   begin_call_service(doc, "fan", on ? "turn_on" : "turn_off", ENTITY_THERMO_FAN);
   send_json(doc);
+#endif
 }
 
 void ha_climate_set_mode(const char* mode) {
+#if THERMOSTAT_ENABLED
   if (!authenticated) return;
   StaticJsonDocument<DOC_OUT> doc;
   begin_call_service(doc, "climate", "set_hvac_mode", ENTITY_INDOOR_TEMP);
   doc["service_data"]["hvac_mode"] = mode;
   send_json(doc);
+#endif
 }
 
 void ha_climate_set_temp_dual(int low, int high) {
+#if THERMOSTAT_ENABLED
   if (!authenticated) return;
   StaticJsonDocument<DOC_OUT> doc;
   begin_call_service(doc, "climate", "set_temperature", ENTITY_INDOOR_TEMP);
   doc["service_data"]["target_temp_low"] = low;
   doc["service_data"]["target_temp_high"] = high;
   send_json(doc);
+#endif
 }
 
 void ha_climate_set_temp_single(int target) {
+#if THERMOSTAT_ENABLED
   if (!authenticated) return;
   StaticJsonDocument<DOC_OUT> doc;
   begin_call_service(doc, "climate", "set_temperature", ENTITY_INDOOR_TEMP);
   doc["service_data"]["temperature"] = target;
   send_json(doc);
+#endif
 }
 
 bool ha_is_connected() {
