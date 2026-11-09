@@ -38,6 +38,8 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.abspath(__file__))   # repo root (this script lives here)
 SECRETS_PATH = os.path.join(ROOT, "include", "secrets.h")
+CONFIG_PATH = os.path.join(ROOT, "include", "config.h")
+CONFIG_EXAMPLE_PATH = os.path.join(ROOT, "include", "config.h.example")
 UPLOAD_ENV = "tessera"
 
 # USB-serial chips this board (and common ESP32 dev boards) show up as. Used to
@@ -269,6 +271,11 @@ def detect_serial_port():
 
 
 def find_platformio():
+    # Prefer the uv-managed install (`uv run python setup_wizard.py`), since it's
+    # the one this project pins; then anything on PATH; then the PlatformIO penv.
+    uv_pio = os.path.join(ROOT, ".venv", "bin", "pio")
+    if os.path.exists(uv_pio):
+        return [uv_pio]
     for name in ("platformio", "pio"):
         path = shutil.which(name)
         if path:
@@ -285,6 +292,17 @@ def find_platformio():
     return None
 
 
+def ensure_config():
+    """Create include/config.h from the example if missing. The firmware won't
+    build without it, and it holds the device list, so the user should edit it."""
+    if os.path.exists(CONFIG_PATH):
+        return True
+    shutil.copyfile(CONFIG_EXAMPLE_PATH, CONFIG_PATH)
+    print(f"  Created include/config.h from config.h.example.")
+    print("  Edit it to list your devices in MOSAIC[] (see README 'Adding devices').")
+    return True
+
+
 def flash(port):
     pio = find_platformio()
     if not pio:
@@ -298,9 +316,23 @@ def flash(port):
         cmd += ["--upload-port", port]
     where = port or "the platformio.ini-configured port"
     print(f"\n  Flashing (env {UPLOAD_ENV}) over USB on {where}...\n")
-    result = subprocess.run(cmd, cwd=ROOT, env=env)
-    if result.returncode != 0:
-        print("\n  Flash failed. Check the panel is on USB and the COM port is free.")
+    # Stream output live, but keep a tail so a failure can be explained.
+    proc = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, errors="replace")
+    tail = []
+    for line in proc.stdout:
+        print(line, end="")
+        tail.append(line.rstrip())
+        del tail[:-40]
+    if proc.wait() != 0:
+        print("\n  Flash failed. The last PlatformIO output above shows why.")
+        errors = [l for l in tail if re.search(r"error|failed|no such file|could not|not found", l, re.I)]
+        if errors:
+            print("  Likely cause:")
+            for l in errors[-5:]:
+                print(f"    {l}")
+        print("  Common fixes: use a data-capable USB cable, close any serial monitor,")
+        print("  and check the port with: pio device list")
         return False
     print("\n  Flash complete.")
     return True
@@ -392,6 +424,7 @@ def main():
             values[key] = ask(label, values[key], is_secret)
 
     write_secrets(values)
+    ensure_config()
 
     if input("\n  Flash the panel over USB now? [y/N]: ").strip().lower() == "y":
         port = detect_serial_port()  # None -> platformio auto-detects for flash
