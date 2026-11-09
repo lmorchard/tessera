@@ -21,6 +21,9 @@ tools/node_modules
 # Python bytecode (setup_wizard.py / serial_read.py)
 __pycache__/
 
+# uv virtualenv (uv.lock is committed)
+.venv/
+
 # Firmware backups / binaries
 *.bin
 

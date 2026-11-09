@@ -1,0 +1,13 @@
+[project]
+name = "tessera"
+version = "0.1.0"
+description = "Helper scripts for flashing and configuring Tessera ESP32 Home Assistant panels"
+requires-python = ">=3.9"
+dependencies = [
+    "platformio",
+    "pyserial",
+    "esptool",
+]
+
+[tool.uv]
+package = false
