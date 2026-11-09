@@ -50,6 +50,17 @@ static int page_cells(int page) {
   return n;
 }
 
+// Montserrat font for a tile label, from the layout's label_size. Sizes come from
+// the lv_conf.h list (LV_FONT_MONTSERRAT_*).
+static const lv_font_t* label_font(int size) {
+  switch (size) {
+    case 16: return &lv_font_montserrat_16;
+    case 24: return &lv_font_montserrat_24;
+    case 32: return &lv_font_montserrat_32;
+    default: return &lv_font_montserrat_14;
+  }
+}
+
 // Position of the cell at index `pos` on a page, using that page's grid.
 static void cell_origin(const PageGrid& g, int pos, int* x, int* y) {
   int x_start = (480 - g.cols * g.w - (g.cols - 1) * TILE_GAP) / 2;
@@ -633,7 +644,7 @@ void ui_init() {
     // name (bottom-left)
     tile_labels[i] = lv_label_create(tile_btns[i]);
     lv_label_set_text(tile_labels[i], lt->label);
-    lv_obj_set_style_text_font(tile_labels[i], &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(tile_labels[i], label_font(lt->label_size), LV_PART_MAIN);
     lv_label_set_long_mode(tile_labels[i], LV_LABEL_LONG_WRAP);
     lv_obj_set_width(tile_labels[i], g.w - 26);
     lv_obj_align(tile_labels[i], LV_ALIGN_BOTTOM_LEFT, 0, -18);

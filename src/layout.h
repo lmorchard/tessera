@@ -17,8 +17,12 @@ struct LayoutTile {
   uint8_t page;
   float on_pct;
   uint16_t on_kelvin;
+  uint8_t label_size;   // tile name font size in px: 14, 16, 24 or 32
   const char* icon;   // glyph, from the ICON_* names in config.h
 };
+
+// Font sizes a tile label can use. These must be enabled in lv_conf.h.
+#define LAYOUT_LABEL_SIZE_DEFAULT 14
 
 // Clear the layout state. Call once at boot, before WiFi starts.
 void layout_init();

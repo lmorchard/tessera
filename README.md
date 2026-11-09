@@ -214,9 +214,14 @@ Each tile is an object in the `tiles` array:
 | `icon` | An icon name: `lightbulb`, `fan`, `bed`, `ceiling_light`, `sofa`, `coach_lamp`, `fan_light`, `home_temp`, `weather`, or `thermostat`. Defaults to `lightbulb`. |
 | `pct` | Optional. For a fan, makes "turn on" start at that % speed instead of 100%. |
 | `kelvin` | Optional. For a tunable-white light, the colour temperature in Kelvin to use when turning on (e.g. `3000`). |
+| `label_size` | Optional. Font size of the name, in pixels: `14`, `16`, `24` or `32`. Overrides the top-level default for this tile. Larger names wrap onto more lines. |
 
-The file also takes an optional top-level `check_seconds` (default 60, clamped to
-10 seconds to a day).
+The file also takes two optional top-level settings:
+
+- `check_seconds`: how often to check for a changed layout (default 60, clamped to
+  10 seconds to a day).
+- `label_size`: the default name font size for every tile (default 14). A tile's own
+  `label_size` overrides it.
 
 Each page picks its grid from its tile count: up to 4 tiles use 2×2, 5–6 use 2×3,
 and 7–9 use 3×3. The Nest thermostat counts toward its page when it's enabled.

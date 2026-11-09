@@ -34,6 +34,11 @@ static const struct { const char* name; const char* glyph; } ICON_NAMES[] = {
   { "thermostat",    ICON_THERMOSTAT },
 };
 
+// A supported label font size (see LAYOUT_LABEL_SIZE_DEFAULT), or `fallback`.
+static uint8_t label_size_or(int size, int fallback) {
+  return (size == 14 || size == 16 || size == 24 || size == 32) ? size : fallback;
+}
+
 static const char* icon_glyph(const char* name) {
   if (name)
     for (const auto& i : ICON_NAMES)
@@ -62,6 +67,7 @@ bool layout_fetch() {
   // note in ha_client.cpp). Anything else in the file is dropped during parsing.
   StaticJsonDocument<768> filter;
   filter["check_seconds"] = true;
+  filter["label_size"] = true;
   filter["tiles"][0]["type"] = true;
   filter["tiles"][0]["label"] = true;
   filter["tiles"][0]["entity"] = true;
@@ -69,6 +75,7 @@ bool layout_fetch() {
   filter["tiles"][0]["icon"] = true;
   filter["tiles"][0]["kelvin"] = true;
   filter["tiles"][0]["pct"] = true;
+  filter["tiles"][0]["label_size"] = true;
 
   DynamicJsonDocument doc(8192);
   String body = http.getString();
@@ -84,6 +91,9 @@ bool layout_fetch() {
     Serial.println("layout: no 'tiles' array, keeping current layout");
     return false;
   }
+
+  // Top-level default label size, used by any tile that doesn't set its own.
+  int default_size = label_size_or(doc["label_size"] | LAYOUT_LABEL_SIZE_DEFAULT, LAYOUT_LABEL_SIZE_DEFAULT);
 
   int n = 0;
   int per_page[LAYOUT_MAX_PAGES] = { 0 };
@@ -111,6 +121,7 @@ bool layout_fetch() {
     t.page = page;
     t.on_pct = item["pct"] | 0.0f;
     t.on_kelvin = item["kelvin"] | 0;
+    t.label_size = label_size_or(item["label_size"] | default_size, default_size);
     t.icon = icon_glyph(item["icon"].as<const char*>());
   }
 
@@ -130,7 +141,7 @@ bool layout_fetch() {
 static bool same_tile(const LayoutTile& a, const LayoutTile& b) {
   return strcmp(a.label, b.label) == 0 && strcmp(a.entity, b.entity) == 0 &&
          a.page == b.page && a.on_pct == b.on_pct && a.on_kelvin == b.on_kelvin &&
-         strcmp(a.icon, b.icon) == 0;
+         a.label_size == b.label_size && strcmp(a.icon, b.icon) == 0;
 }
 
 bool layout_changed() {
