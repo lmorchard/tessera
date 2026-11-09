@@ -2,7 +2,7 @@
 
 A Home Assistant wall-panel controller for the **Guition ESP32-S3-4848S040** — a 4" 480×480 capacitive-touch display. Tessera shows a grid of device tiles that toggle Home Assistant entities over the WebSocket API, plus indoor/outdoor temperatures and a full thermostat control view.
 
-> **Why "Tessera"?** A *tessera* is a single small tile used to build a mosaic. The name fits a screen made of device tiles — and the configuration array that defines them is, fittingly, called `MOSAIC[]`.
+> **Why "Tessera"?** A *tessera* is a single small tile used to build a mosaic. The name fits a screen made of device tiles, which are defined in a layout file in Home Assistant.
 
 <p align="center">
   <img src="docs/tessera-panel.jpg" alt="Tessera running on a Guition ESP32-S3-4848S040 in a 3D-printed stand: a 3×3 grid of device tiles with a header clock and indoor/outdoor temperatures" width="420">
@@ -10,7 +10,7 @@ A Home Assistant wall-panel controller for the **Guition ESP32-S3-4848S040** —
 
 ## Features
 
-- **3×3 tile grid**, data-driven from a `MOSAIC[]` array in `config.h`
+- **Tile grid from a Home Assistant layout file**, so tiles change without a firmware rebuild. Each page picks a 2×2, 2×3, or 3×3 grid from its tile count.
 - **Toggle lights / switches / fans** via the HA WebSocket API, with optimistic UI updates
 - **Per-tile icons** (Material Design Icons) and **live value text** (brightness %, fan speed %)
 - **Availability pips** — green when the entity is reachable, amber when `unavailable`
@@ -78,8 +78,8 @@ Configuration is split in two, and **neither file is committed**:
    ```sh
    cp include/config.h.example include/config.h
    ```
-   Edit `include/config.h`: list your tiles in `MOSAIC[]` and set the header
-   thermostat/weather entities — see [Adding devices](#adding-devices).
+   Edit `include/config.h` to set the header thermostat/weather entities. Your
+   tiles go in a layout file in Home Assistant — see [Adding devices](#adding-devices).
 
 5. **Run the setup wizard** (gathers credentials, then flashes)
    ```sh
@@ -177,12 +177,12 @@ code are deliberately self-describing for exactly this.
 
 - **Setup & install** — paste this README and `include/config.h.example` into an
   LLM and describe your setup ("Home Assistant at `192.168.x.x`, these devices…").
-  It can fill in `MOSAIC[]`, pick `ICON_*` glyphs, and walk you through running the
+  It can fill in the layout file, pick icons, and walk you through running the
   setup wizard (which gathers your token and flashes the panel).
-- **Adding or changing devices** — paste your `config.h` and say *"add my garage
-  light, entity `switch.garage`."* Every field (`label`, `entity_id`, `page`,
-  `on_pct`, `icon`, `on_kelvin`) is commented and the available icons are
-  listed, so the model has what it needs to produce a correct `MOSAIC[]` row.
+- **Adding or changing devices** — paste your `layout.json` and say *"add my garage
+  light, entity `switch.garage`."* Every field (`label`, `entity`, `page`, `icon`,
+  `pct`, `kelvin`) is documented in `layout.example.json`, so the model has what it
+  needs to produce a correct tile.
 - **Running more than one panel** — paste `panels.py` alongside a description of
   your panels ("a kitchen one and an office one, same WiFi/HA") and it can walk
   you through `new`/`flash` for each.
@@ -198,40 +198,41 @@ structured to make AI-assisted setup and extension fast and reliable.
 
 ## Adding devices
 
-Tiles are defined in `include/config.h` as rows of the `MOSAIC[]` array. Adding a
-device that uses an existing icon needs no firmware changes — just a new row, a
-rebuild, and a flash. Each row has six fields:
+Tiles come from a layout file in Home Assistant, not from the firmware. The panel
+downloads `/local/tessera/layout.json` (served from `/config/www/tessera/layout.json`)
+at boot and checks it every 60 seconds. A changed layout restarts the panel, which
+rebuilds the screen. Adding, moving, or renaming a tile is an HA edit, with no
+rebuild or flash.
+
+Each tile is an object in the `tiles` array:
 
 | Field | Meaning |
 |---|---|
-| `label` | Text shown under the icon (keep short — ~14 chars fits) |
-| `entity_id` | The Home Assistant entity, e.g. `light.kitchen`. Tapping the tile toggles it. |
-| `page` | Which screen the tile is on (0-based). Up to 9 tiles per page (3×3); swipe left/right to change pages. |
-| `on_pct` | `0` for a plain toggle. For a fan, a value `>0` makes "turn on" start at that % speed instead of 100% (e.g. `16.67` ≈ the lowest of 6 speeds). Ignored for non-fans. |
-| `icon` | An `ICON_*` name from the catalog at the top of `config.h`. |
-| `on_kelvin` | `0` for no change. For a tunable-white light, a value `>0` sets that color temperature (in Kelvin, e.g. `3000` for warm white) when turning on. Ignored for non-color-temp lights. |
+| `label` | Text shown under the icon (keep short — ~14 chars fits; 24 max) |
+| `entity` | The Home Assistant entity, e.g. `light.kitchen`. Tapping the tile toggles it. |
+| `page` | Which screen the tile is on (0-based). Up to 9 tiles per page, swipe left/right to change pages. |
+| `icon` | An icon name: `lightbulb`, `fan`, `bed`, `ceiling_light`, `sofa`, `coach_lamp`, `fan_light`, `home_temp`, `weather`, or `thermostat`. Defaults to `lightbulb`. |
+| `pct` | Optional. For a fan, makes "turn on" start at that % speed instead of 100%. |
+| `kelvin` | Optional. For a tunable-white light, the colour temperature in Kelvin to use when turning on (e.g. `3000`). |
 
-`on_kelvin` is the last field, so you can drop it entirely for a plain toggle —
-the compiler zero-fills anything left off the end. `icon` is required and comes
-*before* it, though, so don't skip `on_pct` while keeping `icon`; the fields are
-positional, not named.
+The file also takes an optional top-level `check_seconds` (default 60, clamped to
+10 seconds to a day).
 
-Example — add a garage light on the first page:
+Each page picks its grid from its tile count: up to 4 tiles use 2×2, 5–6 use 2×3,
+and 7–9 use 3×3. The Nest thermostat counts toward its page when it's enabled.
 
-```c
-static const Tessera MOSAIC[] = {
-  // ...existing tiles...
-  { "Garage", "switch.garage", 0, 0, ICON_LIGHTBULB },          // plain toggle (on_kelvin omitted)
-  { "Garage", "light.garage", 0, 0, ICON_LIGHTBULB, 3000 },     // a tunable-white light, warm on
-};
+Example — add a garage light on the first page, after the existing tiles:
+
+```json
+{ "label": "Garage", "entity": "switch.garage", "page": 0, "icon": "lightbulb" }
 ```
 
-Then rebuild and flash (`pio run --target upload`). The entity must already exist
-in Home Assistant.
+The entity must already exist in Home Assistant. Save the file in the File editor
+and the panel picks it up within a minute.
 
-**Easiest path:** paste your `config.h` into an LLM and say *"add my garage light,
-entity `switch.garage`."* The file documents every field and lists every available
-icon, so the model has what it needs to produce a correct row.
+**Easiest path:** paste your `layout.json` into an LLM and say *"add my garage
+light, entity `switch.garage`."* The template `layout.example.json` documents
+every field.
 
 ## Icons
 
@@ -256,10 +257,14 @@ To add a glyph that isn't in the catalog:
      --range 0xF0335,0xF1797,0xF02E3,0xF0769,0xF04B9,0xF1020,0xF1798,0xF0F55,0xF0595,0xF0393,0xF0XXX
    ```
    (Keep every existing codepoint; just add yours as `0xF0XXX`.)
-3. Add a matching define in `config.h` and use it in a tile. The glyph is a UCN
-   with the codepoint zero-padded to 8 hex digits — e.g. `F0608` becomes:
+3. Add a matching define in `config.h`, and a row in the icon table in
+   `src/layout.cpp` so layout files can use it by name. The glyph is a UCN with the
+   codepoint zero-padded to 8 hex digits — e.g. `F0608` becomes:
    ```c
    #define ICON_GARAGE "\U000F0608"   // garage
+   ```
+   ```c
+   { "garage", ICON_GARAGE },   // in ICON_NAMES[]
    ```
 
 ## Known setup notes

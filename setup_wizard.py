@@ -299,7 +299,7 @@ def ensure_config():
         return True
     shutil.copyfile(CONFIG_EXAMPLE_PATH, CONFIG_PATH)
     print(f"  Created include/config.h from config.h.example.")
-    print("  Edit it to list your devices in MOSAIC[] (see README 'Adding devices').")
+    print("  Devices come from Home Assistant's layout.json (see README 'Adding devices').")
     return True
 
 

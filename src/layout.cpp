@@ -1,6 +1,6 @@
 // layout.cpp — the tile layout used by the UI and the HA client.
 //
-// Starts as the compiled MOSAIC[] (config.h). layout_fetch() replaces it with
+// Starts empty. layout_fetch() loads
 // /local/tessera/layout.json from Home Assistant, which HA serves from
 // /config/www/tessera/layout.json. That file is read without a token, so it must
 // not hold secrets. A failed fetch or an unusable file keeps the current layout.

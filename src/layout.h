@@ -1,8 +1,7 @@
 #pragma once
 
 // Runtime tile layout, fetched from Home Assistant (/local/tessera/layout.json).
-// Tiles are changed in HA, not in firmware, so MOSAIC[] in config.h no longer
-// drives the panel.
+// Tiles are changed in HA, not in firmware.
 
 #include <stdint.h>
 

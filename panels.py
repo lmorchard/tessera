@@ -317,7 +317,7 @@ def cmd_new(args):
     cfg_dst, sec_dst = profile_paths(name)
     with open(cfg_dst, "w", encoding="utf-8", newline="\n") as f:
         f.write(cfg_text)
-    print(f'  Wrote {cfg_dst} (OTA_HOSTNAME set to "{name}" - edit its MOSAIC[] for this panel\'s devices)')
+    print(f'  Wrote {cfg_dst} (OTA_HOSTNAME set to "{name}" - this panel\'s devices come from its HA layout.json)')
 
     # --- secrets.h: copy from an existing panel, or run the credential wizard ---
     values = {}

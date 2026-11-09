@@ -109,7 +109,7 @@ static bool ha_get_state(const char* eid, JsonDocument& doc, const JsonDocument&
 }
 
 // Fetch one numeric attribute from an entity and push it to a UI setter (used for
-// the header temperatures, which are not MOSAIC tiles). is<float>() rejects null
+// the header temperatures, which are not layout tiles). is<float>() rejects null
 // AND non-numeric values (e.g. "unavailable") so a bad read can't show a fake 0.
 static void fetch_one_temp(const char* eid, const char* attr, void (*setter)(int)) {
   StaticJsonDocument<FILTER_ATTR> filter;
@@ -315,7 +315,7 @@ static void on_message(uint8_t* payload, size_t length) {
       const char* est = doc["event"]["data"]["new_state"]["state"];
       if (!eid || !est) return;
 
-      // Header temperatures (not MOSAIC tiles)
+      // Header temperatures (not layout tiles)
       JsonVariantConst attrs = doc["event"]["data"]["new_state"]["attributes"];
 #if THERMOSTAT_ENABLED
       if (strcmp(eid, ENTITY_INDOOR_TEMP) == 0) {
