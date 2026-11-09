@@ -1,5 +1,6 @@
 {
   "check_seconds": 60,
+  "screensaver_seconds": 300,
   "label_size": 14,
   "tiles": [
     {

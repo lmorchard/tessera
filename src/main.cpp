@@ -59,10 +59,13 @@ static void try_load_layout() {
 // in place, and it takes about 20 seconds.
 static void check_layout_changed() {
   if (!layout_fetch()) return;
-  if (!layout_changed()) return;
-  Serial.println("layout: changed in HA, restarting to apply");
-  delay(200);
-  ESP.restart();
+  if (layout_changed()) {
+    Serial.println("layout: changed in HA, restarting to apply");
+    delay(200);
+    ESP.restart();
+  }
+  // Timing settings don't need a rebuild, so apply them now.
+  layout_commit();
 }
 
 void setup() {

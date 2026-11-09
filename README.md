@@ -222,6 +222,10 @@ The file also takes two optional top-level settings:
   10 seconds to a day).
 - `label_size`: the default name font size for every tile (default 14). A tile's own
   `label_size` overrides it.
+- `screensaver_seconds`: idle seconds before the LCARS screensaver starts, counted
+  from the last touch (default 300). It never starts before the screen dims, and
+  it can be changed without a restart. Only applies when the screensaver is enabled
+  in `config.h`.
 
 Each page picks its grid from its tile count: up to 4 tiles use 2×2, 5–6 use 2×3,
 and 7–9 use 3×3. The Nest thermostat counts toward its page when it's enabled.

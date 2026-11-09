@@ -19,6 +19,8 @@ static int tile_count = 0;
 static int staged_count = 0;
 static uint32_t check_seconds = LAYOUT_DEFAULT_CHECK_SECONDS;   // in use
 static uint32_t staged_check_seconds = LAYOUT_DEFAULT_CHECK_SECONDS;
+static uint32_t screensaver_secs = SCREENSAVER_IDLE_MS / 1000;
+static uint32_t staged_screensaver_secs = SCREENSAVER_IDLE_MS / 1000;
 
 // Icon names used in layout.json, mapped to the ICON_* glyphs in config.h.
 static const struct { const char* name; const char* glyph; } ICON_NAMES[] = {
@@ -65,8 +67,9 @@ bool layout_fetch() {
 
   // The filter must list every key the loop below reads (see the undersized-filter
   // note in ha_client.cpp). Anything else in the file is dropped during parsing.
-  StaticJsonDocument<768> filter;
+  StaticJsonDocument<1024> filter;
   filter["check_seconds"] = true;
+  filter["screensaver_seconds"] = true;
   filter["label_size"] = true;
   filter["tiles"][0]["type"] = true;
   filter["tiles"][0]["label"] = true;
@@ -135,6 +138,11 @@ bool layout_fetch() {
   // Clamp to 10 s minimum so a typo can't hammer HA, and 1 day maximum.
   uint32_t secs = doc["check_seconds"] | LAYOUT_DEFAULT_CHECK_SECONDS;
   staged_check_seconds = secs < 10 ? 10 : (secs > 86400 ? 86400 : secs);
+
+  // Screensaver delay: never before the dim (IDLE_DIM_MS), and at most a day.
+  uint32_t ss = doc["screensaver_seconds"] | (SCREENSAVER_IDLE_MS / 1000);
+  uint32_t ss_min = IDLE_DIM_MS / 1000 + 1;
+  staged_screensaver_secs = ss < ss_min ? ss_min : (ss > 86400 ? 86400 : ss);
   return true;
 }
 
@@ -152,14 +160,24 @@ bool layout_changed() {
 }
 
 void layout_commit() {
+  bool first = (tile_count == 0);
+  bool timing_changed = (check_seconds != staged_check_seconds) ||
+                        (screensaver_secs != staged_screensaver_secs);
   memcpy(tiles, staging, sizeof(LayoutTile) * staged_count);
   tile_count = staged_count;
   check_seconds = staged_check_seconds;
-  Serial.printf("layout: using %d tiles, checking every %us\n", tile_count, (unsigned)check_seconds);
+  screensaver_secs = staged_screensaver_secs;
+  if (first || timing_changed)
+    Serial.printf("layout: %d tiles, checking every %us, screensaver after %us\n",
+                  tile_count, (unsigned)check_seconds, (unsigned)screensaver_secs);
 }
 
 uint32_t layout_check_seconds() {
   return check_seconds;
+}
+
+uint32_t layout_screensaver_seconds() {
+  return screensaver_secs;
 }
 
 int layout_count() {

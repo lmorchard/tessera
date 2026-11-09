@@ -16,6 +16,8 @@
 #include "display.h"
 #include "ha_client.h"
 #include "layout.h"
+#include "lcars.h"
+#include "screensaver.h"
 #include "config.h"
 
 #define HEADER_H   56
@@ -111,14 +113,7 @@ static uint32_t last_activity_ms = 0;
 static bool is_dimmed = false;
 
 // LCARS palette (step 1: flat colors; no gradients, frosting, or shadows).
-#define LCARS_BG      0x000000
-#define LCARS_ORANGE  0xFF9966
-#define LCARS_TAN     0xFFCC99
-#define LCARS_LAVENDER 0xCC99CC
-#define LCARS_BLUE    0x9999FF
-#define LCARS_OFF     0x2A2A2A   // off-tile fill
-#define LCARS_TEXT_DIM 0x9A9A9A
-#define LCARS_INK     0x000000   // text on lit (colored) tiles
+
 
 // Lit-tile colors, cycled by tile index so neighbours differ.
 static const uint32_t LCARS_TILE_COLORS[] = {
@@ -485,17 +480,28 @@ static void time_cb(lv_timer_t*) {
   }
 }
 
+// Idle stages, measured from the last touch: the screen dims at IDLE_DIM_MS, then
+// the screensaver starts at SCREENSAVER_IDLE_MS (when enabled). Both keep running
+// after the screen dims, so the dim is never replaced.
 static void dim_cb(lv_timer_t*) {
   if (!is_dimmed && millis() - last_activity_ms > IDLE_DIM_MS) {
     display_set_backlight(BRIGHT_DIM);
     is_dimmed = true;
   }
+#if SCREENSAVER_ENABLED
+  if (!screensaver_active() && millis() - last_activity_ms > layout_screensaver_seconds() * 1000UL) {
+    screensaver_start();
+  }
+#endif
 }
 
 bool ui_is_dimmed() { return is_dimmed; }
 
 void ui_notify_touch() {
   last_activity_ms = millis();
+#if SCREENSAVER_ENABLED
+  screensaver_stop();
+#endif
   if (is_dimmed) {
     display_set_backlight(BRIGHT_FULL);
     is_dimmed = false;
@@ -723,6 +729,11 @@ void ui_init() {
   // ---- Thermostat detail view (hidden overlay) ----
 #if THERMOSTAT_ENABLED
   build_thermo_view(scr);
+#endif
+
+  // ---- Screensaver overlay (hidden until idle) ----
+#if SCREENSAVER_ENABLED
+  screensaver_init(scr, tileview);
 #endif
 
   // ---- Timers ----

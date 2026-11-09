@@ -42,6 +42,10 @@ void layout_commit();
 #define LAYOUT_DEFAULT_CHECK_SECONDS 60
 uint32_t layout_check_seconds();
 
+// Idle seconds before the screensaver starts, from the file's "screensaver_seconds"
+// field, or SCREENSAVER_IDLE_MS (config.h) when absent. Never less than the dim time.
+uint32_t layout_screensaver_seconds();
+
 int layout_count();
 
 // Returns nullptr if idx is out of range.

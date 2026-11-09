@@ -18,10 +18,20 @@
 #define ENTITY_OUTDOOR_TEMP "weather.forecast_home"
 #define ENTITY_THERMO_FAN   "fan.your_thermostat_fan"
 
+// Thermostat: 1 = show the Nest thermostat tile, detail view, and indoor header
+// temp; 0 = hide all of them (use this if the thermostat isn't in Home Assistant).
+#define THERMOSTAT_ENABLED 0
+
 // Display
 #define IDLE_DIM_MS   60000
 #define BRIGHT_FULL   255
 #define BRIGHT_DIM    40
+
+// Screensaver: 1 = after the screen has been idle for SCREENSAVER_IDLE_MS, show a
+// subtle LCARS-style animation over the tiles. Any touch returns to the grid.
+// It runs after the dim, which still happens at IDLE_DIM_MS.
+#define SCREENSAVER_ENABLED 0
+#define SCREENSAVER_IDLE_MS 300000
 
 // Backlight GPIO (verify against tested configs if backlight doesn't work)
 #define PIN_BACKLIGHT 38
